@@ -11,12 +11,16 @@ import AddProfile from './components/AddProfile';
 import EditProfile from './components/EditProfile';
 
 
+import Settings from './components/Settings';
+
+
 
 
 function App() {
   return (
     <Router>
       <Routes>
+      <Route path="/Settings" element={<Settings />} /> 
         {/* เส้นทางสำหรับหน้า Login และ Register */}
         <Route path="/login" element={<Login />} />
         <Route path="/addProfile" element={<AddProfile />} />

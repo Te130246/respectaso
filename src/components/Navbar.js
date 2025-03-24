@@ -30,7 +30,7 @@ function Navbar() {
           </a>
         </li>
         <li className="nav-item px-3 d-flex align-items-center">
-          <a href="javascript:;" className="nav-link text-body p-0">
+          <a href="/Settings" className="nav-link text-body p-0">
             <i className="material-symbols-rounded fixed-plugin-button-nav">settings</i>
           </a>
         </li>

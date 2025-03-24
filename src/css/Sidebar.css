@@ -1,0 +1,52 @@
+.settings-icon {
+    background: white;
+    border-radius: 50%;
+    padding: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  }
+  
+  .settings-box {
+    position: absolute;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    padding: 10px;
+    border-radius: 5px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    z-index: 1000; /* Ensure it appears above other elements */
+  }
+
+  .settings-icon {
+    transition: transform 0.3s ease;
+}
+
+.settings-box {
+    width: 300px; /* กำหนดความกว้างของการ์ด */
+    max-height: 400px; /* จำกัดความสูง */
+    overflow-y: auto; /* ให้มี Scrollbar ถ้าข้อมูลเยอะ */
+    background-color: #f8f9fa; /* สีพื้นหลัง */
+    border: 1px solid #007bff; /* สีขอบ */
+    border-radius: 8px; /* มุมโค้ง */
+    padding: 15px; /* ระยะห่างภายใน */
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); /* เงา */
+    z-index: 10; /* ให้อยู่ด้านบน */
+}
+
+.settings-box h5 {
+    margin-bottom: 15px; /* ระยะห่างด้านล่าง */
+    color: #007bff; /* สีหัวข้อ */
+}
+
+.settings-box label {
+    display: block; /* ให้ label แสดงในบรรทัดใหม่ */
+    margin-bottom: 10px; /* ระยะห่างด้านล่าง */
+}
+
+.settings-box input[type="color"] {
+    margin-left: 10px; /* ระยะห่างด้านซ้าย */
+}
+
+.settings-box img {
+    margin-top: 10px; /* ระยะห่างด้านบน */
+    border: 1px solid #ccc; /* ขอบของภาพ */
+    border-radius: 5px; /* มุมโค้งของภาพ */
+}

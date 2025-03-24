@@ -15,8 +15,8 @@ function Profile() {
       .then((data) => {
         // เลือกข้อมูลที่มี id มากที่สุด (ข้อมูลล่าสุด)
         if (data.length > 0) {
-          const latestProfile = data.reduce((latest, current) => 
-            current.id > latest.id ? current : latest, data[0]
+          const latestProfile = data.reduce((latest, current) =>
+            current._id > latest._id ? current : latest
           );
           setProfile(latestProfile);
         }
@@ -37,7 +37,7 @@ function Profile() {
         <div
           className="page-header min-height-300 border-radius-xl mt-4"
           style={{
-            backgroundImage: `url("http://localhost:5000/uploads/${profile.cover_image}")`,
+            backgroundImage: `url("${profile.coverImage}")`, // ใช้ Base64 สำหรับแสดงรูป Cover
           }}
         >
           <span className="mask bg-gradient-dark opacity-6" />
@@ -47,7 +47,7 @@ function Profile() {
             <div className="col-auto">
               <div className="avatar avatar-xl position-relative">
                 <img
-                  src={`http://localhost:5000/uploads/${profile.profile_image}`}
+                  src={profile.profileImage} // ใช้ Base64 สำหรับแสดงรูป Profile
                   alt="profile_image"
                   className="w-100 border-radius-lg shadow-sm"
                 />
@@ -55,7 +55,7 @@ function Profile() {
             </div>
             <div className="col-auto my-auto">
               <div className="h-100">
-                <h5 className="mb-1">{profile.full_name}</h5>
+                <h5 className="mb-1">{profile.fullName}</h5>
                 <p className="mb-0 font-weight-normal text-sm">{profile.bio}</p>
               </div>
             </div>
@@ -86,7 +86,7 @@ function Profile() {
                   <hr className="horizontal gray-light my-4" />
                   <ul className="list-group">
                     <li className="list-group-item border-0 ps-0 pt-0 text-sm">
-                      <strong className="text-dark">Full Name:</strong> &nbsp; {profile.full_name}
+                      <strong className="text-dark">Full Name:</strong> &nbsp; {profile.fullName}
                     </li>
                     <li className="list-group-item border-0 ps-0 text-sm">
                       <strong className="text-dark">Mobile:</strong> &nbsp; {profile.mobile}

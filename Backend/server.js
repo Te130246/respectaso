@@ -1,41 +1,68 @@
+require('dotenv').config(); // โหลดตัวแปรจากไฟล์ .env
 const express = require('express');
-const mysql = require('mysql2');
+const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-
-// ตรวจสอบและสร้างโฟลเดอร์ uploads หากไม่มี
-if (!fs.existsSync('./uploads')) {
-    fs.mkdirSync('./uploads');
-}
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Multer setup for file uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'uploads/');
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
-    }
+// ดึงค่าจาก MONGO_URI
+const mongoUri = process.env.MONGO_URI;
+
+if (!mongoUri) {
+    console.error('MONGO_URI is not defined in .env file');
+    process.exit(1);
+}
+
+// เชื่อมต่อกับ MongoDB
+mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log('Connected to MongoDB'))
+    .catch(err => {
+        console.error('Error connecting to MongoDB:', err.message);
+        process.exit(1);
+    });
+
+// สร้าง Schema สำหรับ Users
+const userSchema = new mongoose.Schema({
+    first_name: { type: String, required: true },
+    last_name: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true }
 });
+
+// สร้าง Schema สำหรับโปรไฟล์
+const profileSchema = new mongoose.Schema({
+    fullName: { type: String, required: true },
+    mobile: { type: String, required: true },
+    email: { type: String, required: true },
+    location: { type: String, required: true },
+    bio: { type: String, required: true },
+    profileImage: { type: Buffer, required: false },
+    profileImageType: { type: String, required: false },
+    coverImage: { type: Buffer, required: false },
+    coverImageType: { type: String, required: false }
+});
+
+// สร้าง Model
+const User = mongoose.model('User', userSchema);
+const Profile = mongoose.model('Profile', profileSchema);
+
+// Multer setup for in-memory storage
+const storage = multer.memoryStorage();
 const upload = multer({ 
     storage: storage,
     fileFilter: (req, file, cb) => {
         const filetypes = /jpeg|jpg|png|gif/;
         const mimetype = filetypes.test(file.mimetype);
-        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+        const extname = filetypes.test(file.originalname.toLowerCase());
 
         if (mimetype && extname) {
             return cb(null, true);
@@ -44,185 +71,125 @@ const upload = multer({
     }
 });
 
-// MySQL Connection
-const db = mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: '',
-    database: 'profile'
-});
-
-// Connect to MySQL
-db.connect(err => {
-    if (err) {
-        console.error('Error connecting to MySQL Database:', err.message);
-        process.exit(1); // ออกจากโปรแกรมหากเชื่อมต่อไม่ได้
-    }
-    console.log('Connected to MySQL Database');
-});
+// ฟังก์ชันแปลง Buffer เป็น Base64
+function getImageUrl(buffer, type) {
+    if (!buffer || !type) return null;
+    return `data:${type};base64,${buffer.toString('base64')}`;
+}
 
 // API สำหรับดึงข้อมูลโปรไฟล์ทั้งหมด
-app.get('/api/profiles', (req, res) => {
-    const sql = 'SELECT * FROM Profiles';
-    db.query(sql, (err, results) => {
-        if (err) {
-            console.error('Error fetching profiles:', err);
-            return res.status(500).send({ message: 'Error fetching profiles', error: err.message });
-        }
-        res.status(200).send(results);
-    });
+app.get('/api/profiles', async (req, res) => {
+    try {
+        const profiles = await Profile.find();
+
+        // แปลงรูปภาพเป็น Base64 ก่อนส่งกลับ
+        const profilesWithImages = profiles.map((profile) => ({
+            ...profile._doc,
+            profileImage: getImageUrl(profile.profileImage, profile.profileImageType),
+            coverImage: getImageUrl(profile.coverImage, profile.coverImageType),
+        }));
+
+        res.status(200).send(profilesWithImages);
+    } catch (err) {
+        console.error('Error fetching profiles:', err);
+        res.status(500).send({ message: 'Error fetching profiles', error: err.message });
+    }
 });
 
 // API สำหรับลงทะเบียนผู้ใช้
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
     const { first_name, last_name, email, password } = req.body;
 
-    // ตรวจสอบว่าข้อมูลครบถ้วนหรือไม่
     if (!first_name || !last_name || !email || !password) {
         return res.status(400).send({ message: 'Please provide all required fields.' });
     }
 
-    // ตรวจสอบรูปแบบอีเมล
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
         return res.status(400).send({ message: 'Invalid email format.' });
     }
 
-    // ตรวจสอบว่าอีเมลซ้ำในฐานข้อมูลหรือไม่
-    const checkEmailQuery = 'SELECT * FROM Users WHERE email = ?';
-    db.query(checkEmailQuery, [email], (err, results) => {
-        if (err) {
-            console.error('Error checking email:', err);
-            return res.status(500).send({ message: 'Error checking email', error: err.message });
-        }
-        if (results.length > 0) {
+    try {
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
             return res.status(400).send({ message: 'Email already exists' });
         }
 
-        // เข้ารหัสรหัสผ่าน
         const hashedPassword = bcrypt.hashSync(password, 8);
+        const newUser = new User({ first_name, last_name, email, password: hashedPassword });
+        await newUser.save();
 
-        // บันทึกข้อมูลผู้ใช้ใหม่
-        const sql = 'INSERT INTO Users (first_name, last_name, email, password) VALUES (?, ?, ?, ?)';
-        db.query(sql, [first_name, last_name, email, hashedPassword], (err, result) => {
-            if (err) {
-                console.error('Error inserting user:', err);
-                return res.status(500).send({ message: 'Error registering user', error: err.message });
-            }
-            res.status(201).send({ message: 'ลงทะเบียนสำเร็จ' });
-        });
-    });
+        res.status(201).send({ message: 'ลงทะเบียนสำเร็จ' });
+    } catch (err) {
+        console.error('Error registering user:', err);
+        res.status(500).send({ message: 'Error registering user', error: err.message });
+    }
 });
 
 // API สำหรับเข้าสู่ระบบผู้ใช้
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
 
-    // ตรวจสอบว่าข้อมูลครบถ้วนหรือไม่
     if (!email || !password) {
         return res.status(400).send({ message: 'Please provide both email and password.' });
     }
 
-    const sql = 'SELECT * FROM Users WHERE email = ?';
-    db.query(sql, [email], (err, results) => {
-        if (err) {
-            console.error('Error during login:', err);
-            return res.status(500).send({ message: 'Error during login', error: err.message });
-        }
-        if (results.length === 0) {
+    try {
+        const user = await User.findOne({ email });
+        if (!user) {
             return res.status(404).send({ message: 'User not found' });
         }
 
-        const user = results[0];
         const passwordIsValid = bcrypt.compareSync(password, user.password);
         if (!passwordIsValid) {
             return res.status(401).send({ message: 'Invalid Password!' });
         }
 
         res.status(200).send({ 
-            id: user.id,
+            id: user._id,
             email: user.email,
             message: 'เข้าสู่ระบบสำเร็จ',
             success: true,
         });
-    });
+    } catch (err) {
+        console.error('Error during login:', err);
+        res.status(500).send({ message: 'Error during login', error: err.message });
+    }
 });
 
-// API สำหรับอัปโหลดไฟล์
-app.post('/api/upload', upload.single('file'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).send({ message: 'No file uploaded.' });
-    }
-    res.status(200).send({ 
-        message: 'File uploaded successfully.',
-        filePath: `/uploads/${req.file.filename}`
-    });
-});
+// API สำหรับเพิ่มโปรไฟล์ใหม่
+app.post('/api/add-profile', upload.fields([
+    { name: 'profileImage', maxCount: 1 },
+    { name: 'coverImage', maxCount: 1 }
+]), async (req, res) => {
+    try {
+        const { fullName, mobile, email, location, bio } = req.body;
 
-// API สำหรับเพิ่มโปรไฟล์
-app.post('/api/add-profile', upload.fields([{ name: 'profileImage' }, { name: 'coverImage' }]), (req, res) => {
-    const { fullName, mobile, email, location, bio } = req.body;
-    const profileImage = req.files['profileImage'] ? req.files['profileImage'][0].filename : null;
-    const coverImage = req.files['coverImage'] ? req.files['coverImage'][0].filename : null;
-
-    if (!fullName || !mobile || !email || !location || !bio) {
-        return res.status(400).send({ message: 'Please provide all required fields.' });
-    }
-
-    const sql = `INSERT INTO Profiles (full_name, mobile, email, location, bio, profile_image, cover_image) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`;
-    db.query(sql, [fullName, mobile, email, location, bio, profileImage, coverImage], (err, result) => {
-        if (err) {
-            console.error('Error inserting profile:', err);
-            return res.status(500).send({ message: 'Error saving profile', error: err.message });
+        // ตรวจสอบว่ามีข้อมูลที่จำเป็นครบหรือไม่
+        if (!fullName || !mobile || !email || !location || !bio) {
+            return res.status(400).send({ message: 'Please provide all required fields.' });
         }
-        res.status(201).send({ message: 'Profile created successfully!' });
-    });
-});
 
+        const newProfile = new Profile({
+            fullName,
+            mobile,
+            email,
+            location,
+            bio,
+            profileImage: req.files['profileImage'] ? req.files['profileImage'][0].buffer : null,
+            profileImageType: req.files['profileImage'] ? req.files['profileImage'][0].mimetype : null,
+            coverImage: req.files['coverImage'] ? req.files['coverImage'][0].buffer : null,
+            coverImageType: req.files['coverImage'] ? req.files['coverImage'][0].mimetype : null
+        });
 
+        await newProfile.save();
 
-app.post('/api/update-profile', upload.fields([{ name: 'profileImage' }, { name: 'coverImage' }]), (req, res) => {
-    const { fullName, mobile, email, location, bio } = req.body;
-    const profileImage = req.files['profileImage'] ? req.files['profileImage'][0].filename : null;
-    const coverImage = req.files['coverImage'] ? req.files['coverImage'][0].filename : null;
-
-    // ตรวจสอบว่าข้อมูลครบถ้วนหรือไม่
-    if (!fullName || !mobile || !email || !location || !bio) {
-        return res.status(400).send({ message: 'Please provide all required fields.' });
+        res.status(201).send({ message: 'Profile created successfully!', profileId: newProfile._id });
+    } catch (err) {
+        console.error('Error creating profile:', err);
+        res.status(500).send({ message: 'Error creating profile', error: err.message });
     }
-
-    // อัปเดตโปรไฟล์ล่าสุด (เลือก id ล่าสุด)
-    const sql = `UPDATE Profiles SET 
-                 full_name = ?, 
-                 mobile = ?, 
-                 email = ?, 
-                 location = ?, 
-                 bio = ?, 
-                 profile_image = COALESCE(?, profile_image), 
-                 cover_image = COALESCE(?, cover_image)
-                 WHERE id = (SELECT MAX(id) FROM Profiles)`;
-
-    db.query(sql, [fullName, mobile, email, location, bio, profileImage, coverImage], (err, result) => {
-        if (err) {
-            console.error('Error updating profile:', err);
-            return res.status(500).send({ message: 'Error updating profile', error: err.message });
-        }
-        res.status(200).send({ message: 'Profile updated successfully!' });
-    });
 });
-
-
-app.delete('/api/delete-profile', (req, res) => {
-    const sql = 'DELETE FROM Profiles WHERE id = (SELECT MAX(id) FROM Profiles)';
-    db.query(sql, (err, result) => {
-      if (err) {
-        console.error('Error deleting profile:', err);
-        return res.status(500).send({ message: 'Error deleting profile', error: err.message });
-      }
-      res.status(200).send({ message: 'Profile deleted successfully!' });
-    });
-  });
 
 // เริ่มเซิร์ฟเวอร์
 app.listen(PORT, () => {
